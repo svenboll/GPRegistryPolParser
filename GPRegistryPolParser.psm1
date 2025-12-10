@@ -20,10 +20,9 @@ else
     $byteParam = @{Encoding = "Byte"}
 }
 
-$NullTerminator = "`0"
-
-$script:REGISTRY_FILE_SIGNATURE = 0x67655250 # "PReg"
-$script:REGISTRY_FILE_VERSION = 0x00000001 # defined as 1
+$NullChar                = [char](0)    # null-terminating character `0
+$REGISTRY_FILE_SIGNATURE = 0x67655250   # "PReg"
+$REGISTRY_FILE_VERSION   = 0x00000001   # defined as 1
 
 Enum RegType {
     REG_NONE                       = 0	# No value type
@@ -130,7 +129,7 @@ function Import-GPRegistryPolFile
 
     # 4 bytes are the version
     $version = [System.BitConverter]::ToInt32($policyContentInBytes, $index)
-    Assert ($version -eq $script:REGISTRY_FILE_VERSION) "Invalid header version in file $($Path)"
+    Assert ($version -eq $REGISTRY_FILE_VERSION) "Invalid header version in file $($Path)"
     $index += 4
 
     # Start processing at byte 8
@@ -151,16 +150,16 @@ function Import-GPRegistryPolFile
         $semicolon = $policyContents.IndexOf(";", $index)
         Assert ($semicolon -ge 0) "Failed to locate the semicolon after key name."
         $keyName = [System.Text.Encoding]::UNICODE.GetString($policyContents[($index)..($semicolon-1)])
-        Assert ($keyName.EndsWith($NullTerminator)) "Missing null-termination in key parameter"
-        $keyName = $keyName.TrimEnd($NullTerminator)
+        Assert ($keyName.EndsWith($NullChar)) "Missing null-termination in key parameter"
+        $keyName = $keyName.TrimEnd($NullChar)
         $index = $semicolon + 2
 
         # Next UNICODE string will continue until the ";" and should be null-terminated
         $semicolon = $policyContents.IndexOf(";", $index)
         Assert ($semicolon -ge 0) "Failed to locate the semicolon after value name."
         $valueName = [System.Text.Encoding]::UNICODE.GetString($policyContents[($index)..($semicolon-1)])
-        Assert ($valueName.EndsWith($NullTerminator)) "Missing null-termination in value parameter"
-        $valueName = $valueName.TrimEnd($NullTerminator)
+        Assert ($valueName.EndsWith($NullChar)) "Missing null-termination in value parameter"
+        $valueName = $valueName.TrimEnd($NullChar)
         $index = $semicolon + 2
 
         # Next DWORD will continue until the ;
@@ -277,8 +276,8 @@ function New-GPRegistryPolFile
 
     New-Item -Path $Path -Force -ErrorAction Stop | Out-Null
 
-    [System.BitConverter]::GetBytes($script:REGISTRY_FILE_SIGNATURE) | Add-Content -Path $Path @byteParam
-    [System.BitConverter]::GetBytes($script:REGISTRY_FILE_VERSION) | Add-Content -Path $Path @byteParam
+    [System.BitConverter]::GetBytes($REGISTRY_FILE_SIGNATURE) | Add-Content -Path $Path @byteParam
+    [System.BitConverter]::GetBytes($REGISTRY_FILE_VERSION) | Add-Content -Path $Path @byteParam
 }
 
 function Add-GPRegistryPolFileEntry
@@ -321,11 +320,11 @@ function New-RegistrySettingsEntry
         
     $Entry += [System.Text.Encoding]::Unicode.GetBytes('[') # Openning bracket
         
-    $Entry += [System.Text.Encoding]::Unicode.GetBytes($RP.KeyName + $NullTerminator)
+    $Entry += [System.Text.Encoding]::Unicode.GetBytes($RP.KeyName + $NullChar)
 
     $Entry += [System.Text.Encoding]::Unicode.GetBytes(';') # semicolon as delimiter
 
-    $Entry += [System.Text.Encoding]::Unicode.GetBytes($RP.ValueName + $NullTerminator)
+    $Entry += [System.Text.Encoding]::Unicode.GetBytes($RP.ValueName + $NullChar)
 
     $Entry += [System.Text.Encoding]::Unicode.GetBytes(';') # semicolon as delimiter
 
@@ -338,7 +337,7 @@ function New-RegistrySettingsEntry
     {
         {@([RegType]::REG_SZ, [RegType]::REG_EXPAND_SZ) -contains $_ }
             {
-                $dataBytes = [System.Text.Encoding]::Unicode.GetBytes($RP.ValueData + $NullTerminator)
+                $dataBytes = [System.Text.Encoding]::Unicode.GetBytes($RP.ValueData + $NullChar)
                 $dataSize = $dataBytes.Count
             }
 
@@ -350,8 +349,8 @@ function New-RegistrySettingsEntry
                     characters, and within that sequence zero or more null-terminated Unicode strings can exist."
                     https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-gpreg/5c092c22-bf6b-4e7f-b180-b20743d368f5
                 #>
-                $valueDataNullTermJoin = $RP.ValueData -join $NullTerminator
-                $dataBytes = [System.Text.Encoding]::Unicode.GetBytes($valueDataNullTermJoin + $NullTerminator + $NullTerminator)
+                $valueDataNullTermJoin = $RP.ValueData -join $NullChar
+                $dataBytes = [System.Text.Encoding]::Unicode.GetBytes($valueDataNullTermJoin + $NullChar + $NullChar)
                 $dataSize = $dataBytes.Count
             }
 
@@ -455,14 +454,14 @@ function Format-MultiStringValue
     )
 
     $result = @()
-    if ($MultiStringValue -match $NullTerminator)
+    if ($MultiStringValue -match $NullChar)
     {
-        [System.Collections.ArrayList] $array = $MultiStringValue.TrimEnd($NullTerminator) -split $NullTerminator
+        [System.Collections.ArrayList] $array = $MultiStringValue.TrimEnd($NullChar) -split $NullChar
 
         # Remove the terminating \0 from all indexes
         foreach ($item in $array)
         {
-            $result += $item.TrimEnd($NullTerminator)
+            $result += $item.TrimEnd($NullChar)
         }
 
         return $result
