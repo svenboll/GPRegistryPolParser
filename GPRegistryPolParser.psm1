@@ -14,14 +14,15 @@
 if ($PSVersionTable.PSVersion.Major -gt "5")
 {
     $byteParam = @{AsByteStream = $True}
-} else
+}
+else
 {
     $byteParam = @{Encoding = "Byte"}
 }
 
 $NullTerminator = "`0"
 
-$script:REGFILE_SIGNATURE = 0x67655250 # "PReg"
+$script:REGISTRY_FILE_SIGNATURE = 0x67655250 # "PReg"
 $script:REGISTRY_FILE_VERSION = 0x00000001 # defined as 1
 
 Enum RegType {
@@ -41,7 +42,7 @@ Enum RegType {
     REG_QWORD_LITTLE_ENDIAN        = 11 # 64-bit number (same as REG_QWORD)
 }
 
-Class GPRegistryPolicy
+class GPRegistryPolicy
 {
     [string]  $KeyName
     [string]  $ValueName
@@ -74,9 +75,10 @@ Class GPRegistryPolicy
     }
 }
 
-Function New-GPRegistryPolicy
+function New-GPRegistryPolicy
 {
-    param (
+    param
+    (
         [Parameter(Mandatory = $true, Position = 0)]
         [ValidateNotNullOrEmpty()]
         [string]
@@ -104,23 +106,11 @@ Function New-GPRegistryPolicy
     return $Policy;
 }
 
-<#
-.SYNOPSIS
-Reads and parses a .pol file.
-
-.DESCRIPTION
-Reads a .pol file, parses it and returns an array of Group Policy registry settings.
-
-.PARAMETER Path
-Specifies the path to the .pol file.
-
-.EXAMPLE
-C:\PS> Read-PolFile -Path "C:\Registry.pol"
-#>
-Function Read-PolFile
+function Import-GPRegistryPolFile
 {
     [OutputType([GPRegistryPolicy[]])]
-    param (
+    param
+    (
         [Parameter(Mandatory = $true, Position = 0)]
         [ValidateNotNullOrEmpty()]
         [string]
@@ -133,9 +123,9 @@ Function Read-PolFile
     [string] $policyContents = Get-Content $Path -Raw
     [byte[]] $policyContentInBytes = Get-Content $Path -Raw @byteParam
 
-    # 4 bytes are the signature PReg
+    # 4 bytes are the signature "PReg"
     $signature = [System.Text.Encoding]::ASCII.GetString($policyContents[($index)..3])
-    Assert ($signature -eq "Preg") "Invalid header signature in file $($Path)"
+    Assert ($signature -ceq "PReg") "Invalid header signature in file $($Path)"
     $index += 4
 
     # 4 bytes are the version
@@ -244,19 +234,31 @@ Function Read-PolFile
     return $RegistryPolicies
 }
 
-<#
-.SYNOPSIS
-Creates a new file / Overwrites existing file
-
-.DESCRIPTION
-Creates a file and initializes it with Group Policy Registry file format signature and version.
-
-.PARAMETER Path
-Path to a file (.pol extension)
-#>
-Function New-GPRegistryPolicyFile
+function Export-GPRegistryPolFile
 {
-    param (
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Path,
+
+        [Parameter(Mandatory = $true)]
+        [GPRegistryPolicy[]]
+        $RegistryPolicies,
+
+        [switch]
+        $Force
+    )
+
+    New-GPRegistryPolFile -Path $Path -Force:$Force
+    Add-GPRegistryPolFileEntry -Path $Path -RegistryPolicies $RegistryPolicies
+}
+
+function New-GPRegistryPolFile
+{
+    param
+    (
         [Parameter(Mandatory = $true, Position = 0)]
         [ValidateNotNullOrEmpty()]
         [string]
@@ -266,7 +268,8 @@ Function New-GPRegistryPolicyFile
         $Force
     )
 
-    if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {
+    if (Test-Path -Path $Path -ErrorAction SilentlyContinue)
+    {
         # Overwrite only when -Force parameter is set
         Assert ($Force) "File $($Path) exists, please specify a different path or use parameter -Force."
         $null = Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
@@ -274,25 +277,39 @@ Function New-GPRegistryPolicyFile
 
     New-Item -Path $Path -Force -ErrorAction Stop | Out-Null
 
-    [System.BitConverter]::GetBytes($script:REGFILE_SIGNATURE) | Add-Content -Path $Path @byteParam
+    [System.BitConverter]::GetBytes($script:REGISTRY_FILE_SIGNATURE) | Add-Content -Path $Path @byteParam
     [System.BitConverter]::GetBytes($script:REGISTRY_FILE_VERSION) | Add-Content -Path $Path @byteParam
 }
 
-<#
-.SYNOPSIS
-Creates a .pol file entry byte array from a GPRegistryPolicy instance.
+function Add-GPRegistryPolFileEntry
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Path,
 
-.DESCRIPTION
-Creates a .pol file entry byte array from a GPRegistryPolicy instance. This entry can be written
-in a .pol file later.
+		[Parameter(Mandatory = $true)]
+        [GPRegistryPolicy[]]
+        $RegistryPolicies
+    )
 
-.PARAMETER RegistryPolicy
-Specifies the registry policy entry.
-#>
-Function New-RegistrySettingsEntry
+    # check if file exists
+    Assert (Test-Path -Path $Path -ErrorAction SilentlyContinue) "Unable to add Registry Policy Entry, file $($Path) doesn't exists."
+        
+    foreach ($rp in $RegistryPolicies)
+    {
+        [Byte[]] $Entry = New-RegistrySettingsEntry -RegistryPolicy $rp
+        $Entry | Add-Content -Path $Path @byteParam
+    }
+}
+
+function New-RegistrySettingsEntry
 {
     [OutputType([Array])]
-    param (
+    param
+    (
 		[Parameter(Mandatory = $true)]
         [alias("RP")]
         [GPRegistryPolicy]
@@ -374,42 +391,10 @@ Function New-RegistrySettingsEntry
     return $Entry
 }
 
-<#
-.SYNOPSIS
-Appends an array of registry policy entries to a file.
-
-.DESCRIPTION
-Appends an array of registry policy entries to a file.
-
-.PARAMETER RegistryPolicies
-An array of registry policy entries.
-
-.PARAMETER Path
-Path to a file (.pol extension)
-#>
-Function Add-RegistryPolicies
+function Assert
 {
-    param (
-		[Parameter(Mandatory = $true)]
-        [GPRegistryPolicy[]]
-        $RegistryPolicies,
-
-		[Parameter(Mandatory = $true)]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $Path
-    )
-        
-    foreach ($rp in $RegistryPolicies)
-    {
-        [Byte[]] $Entry = New-RegistrySettingsEntry -RegistryPolicy $rp
-        $Entry | Add-Content -Path $Path @byteParam
-    }
-}
-
-Function Assert
-{
-    param (
+    param
+    (
         [Parameter(Mandatory = $true)]
         $Condition,
 
@@ -425,10 +410,11 @@ Function Assert
     }
 }
 
-Function Convert-StringToInt
+function Convert-StringToInt
 {
     [OutputType([System.Int32[]])]
-    param (
+    param
+    (
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
         [System.Object[]]
@@ -457,14 +443,6 @@ Function Convert-StringToInt
     return $result
 }
 
-<#
-    .SYNOPSIS
-        Formats a multistring value.
-
-    .DESCRIPTION
-        Formats a multistring value by first spliting on \0 and the removing the terminating \0\0.
-        This is need to match the desired valueData
-#>
 function Format-MultiStringValue
 {
     [CmdletBinding()]
@@ -496,4 +474,4 @@ function Format-MultiStringValue
     }
 }
 
-Export-ModuleMember -Function 'Read-PolFile','New-GPRegistryPolicyFile','Add-RegistryPolicies','New-RegistrySettingsEntry'
+Export-ModuleMember -Function 'Import-GPRegistryPolFile','Export-GPRegistryPolFile','New-GPRegistryPolFile','Add-GPRegistryPolFileEntry'
