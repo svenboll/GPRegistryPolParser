@@ -267,9 +267,11 @@ Function New-GPRegistryPolicyFile
     )
 
     if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {
-        Assert (-not $Force) "File $($Path) exists, please specify a different path or use parameter -Force."
+        # Overwrite only when -Force parameter is set
+        Assert ($Force) "File $($Path) exists, please specify a different path or use parameter -Force."
+        $null = Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
     }
-    $null = Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
+
     New-Item -Path $Path -Force -ErrorAction Stop | Out-Null
 
     [System.BitConverter]::GetBytes($script:REGFILE_SIGNATURE) | Add-Content -Path $Path @byteParam
