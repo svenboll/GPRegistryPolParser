@@ -37,7 +37,7 @@
             # Prerelease = 'prerelease'
 
             # Tags applied to this module. These help with module discovery in online galleries.
-            Tags = @('GroupPolicy', 'Registry.pol')
+            Tags = @('GroupPolicy', 'Registry.pol', 'Parser')
 
             # A URL to the license for this module.
             LicenseUri = 'https://github.com/svenboll/GPRegistryPolParser/blob/main/LICENSE'
@@ -52,5 +52,5 @@
 
     } # End of PrivateData hashtable
 
-    FunctionsToExport = @('Read-PolFile','New-GPRegistryPolicyFile','Add-RegistryPolicies','New-RegistrySettingsEntry')
+    FunctionsToExport = @('Import-GPRegistryPolFile','Export-GPRegistryPolFile','New-GPRegistryPolFile','Add-GPRegistryPolFileEntry')
 }
